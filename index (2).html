@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ur">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bijli Hisab Pro</title>
+<style>
+body{font-family:'Segoe UI',sans-serif;background:#f0f8f0;margin:0;padding:20px}
+.box{background:white;border-radius:15px;padding:20px;box-shadow:0 4px 10px rgba(0,0,0,0.1);max-width:400px;margin:auto}
+h1{color:#006400;text-align:center;font-size:24px}
+select,input{width:100%;padding:12px;margin:10px 0;border:2px solid #ddd;border-radius:8px;font-size:16px}
+button{width:100%;padding:14px;background:#006400;color:white;border:none;border-radius:8px;font-size:18px;font-weight:bold;margin-top:8px;cursor:pointer}
+.pay-btn{background:#ff6f00}
+.easypaisa{background:#008c4a}
+.photo-btn{background:#1e88e5}
+.result{margin-top:20px;padding:15px;background:#e8f5e9;border-radius:10px;}
+.result b{color:#006400}
+canvas{margin-top:20px;background:white;border-radius:10px;width:100% !important}
+.history{margin-top:15px;font-size:14px}
+.history-item{padding:8px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between}
+.bill-name{font-size:12px;color:#006400;font-weight:bold;margin-bottom:5px}
+</style>
+</head>
+<body>
+<div class="box">
+<h1>⚡ Bijli Hisab Pro</h1>
+
+<p>Meter Type:</p>
+<select id="type">
+<option value="domestic">Ghar - Domestic</option>
+<option value="commercial">Dukan/Office - Commercial</option>
+</select>
+
+<p>Pichla Reading:</p>
+<input type="number" id="old" placeholder="Pichle mahine ka unit">
+<p>Current Reading:</p>
+<input type="number" id="new" placeholder="Aaj ka unit">
+<p>Bill Ref Number:</p>
+<input type="text" id="ref" placeholder="14 digit number">
+<p>Bill ka Naam - Optional:</p>
+<input type="text" id="billName" placeholder="Ghar, Dukan, Ammi ka ghar...">
+
+<button type="button" onclick="hisab()">Bill Hisab Karo + Save</button>
+
+<!-- RESULT SIRF HISAB KE LIYE -->
+<div class="result" id="res">
+<div id="billCard">
+<p class="bill-name" id="showBillName"></p>
+<p><b>Unit Use:</b> <span id="unit">-</span></p>
+<p><b>Total Bill:</b> Rs <span id="bill">-</span></p>
+<p style="font-size:12px;color:#666">Date: <span id="date">-</span></p>
+</div>
+</div>
+
+<!-- YE 3 BUTTON HAMESHA NAZAR AAYENGE -->
+<button type="button" class="pay-btn" onclick="pay('jazzcash')">Pay with JazzCash</button>
+<button type="button" class="easypaisa" onclick="pay('easypaisa')">Pay with Easypaisa</button>
+<button type="button" class="photo-btn" onclick="saveAsPhoto()">📸 Bill ki Photo Banao</button>
+
+<!-- GEPCO OFFICIAL BUTTON -->
+<div style="margin-top:15px; text-align:center;">
+  <a href="https://bill.pitc.com.pk/gepcoBill" target="_blank" 
+     style="background:#0a5c36; color:white; padding:12px 25px; 
+            border-radius:8px; text-decoration:none; font-weight:bold; 
+            display:inline-block; width:100%; box-sizing:border-box;">
+    📄 GEPCO Official Bill Check Karo
+  </a>
+  <p style="font-size:12px; color:#666; margin-top:8px;">
+    Note: 14 digit "Reference No" dalna hai
+  </p>
+</div>
+
+<canvas id="graph" height="200"></canvas>
+<div class="history" id="history"></div>
+</div>
+
+<script>
+let lastBill = 0;
+let lastRef = "";
+let lastUnit = 0;
+let lastName = "";
+
+function saveBill(bill, unit, ref, name){
+  let data = JSON.parse(localStorage.getItem('bills') || '[]');
+  let month = new Date().toLocaleDateString('ur-PK', {month:'short', year:'2digit'});
+  let today = new Date().toLocaleDateString('ur-PK');
+  data.push({month:month, bill:bill.toFixed(0), unit:unit, name:name||'Bill', date:today});
+  if(data.length > 6) data.shift();
+  localStorage.setItem('bills', JSON.stringify(data));
+}
+
+function hisab(){
+let type = document.getElementById('type').value;
+let old = parseFloat(document.getElementById('old').value);
+let nw = parseFloat(document.getElementById('new').value);
+lastRef = document.getElementById('ref').value;
+lastName = document.getElementById('billName').value;
+
+if(isNaN(old) || isNaN(nw)){alert("Pehle reading likho");return}
+if(nw<=old){alert("Current reading zyada honi chahiye");return}
+
+let unit = nw - old;
+lastUnit = unit;
+let bill = 0;
+
+if(type=="domestic"){
+  if(unit<=100) bill = unit*7.5;
+  else if(unit<=200) bill = 100*7.5 + (unit-100)*10;
+  else if(unit<=300) bill = 100*7.5 + 100*10 + (unit-200)*12;
+  else bill = 100*7.5 + 100*10 + 100*12 + (unit-300)*15;
+} else {
+  bill = unit*18 + 500;
+}
+
+let tax = bill * 0.17;
+lastBill = bill + tax;
+
+document.getElementById('unit').innerText = unit;
+document.getElementById('bill').innerText = lastBill.toFixed(0);
+document.getElementById('date').innerText = new Date().toLocaleDateString('ur-PK');
+document.getElementById('showBillName').innerText = lastName ? '🏷️ ' + lastName : '';
+
+saveBill(lastBill, unit, lastRef, lastName);
+drawGraph();
+showHistory();
+}
+
+// BILL KI PHOTO BANANE WALA CODE
+function saveAsPhoto(){
+  if(lastBill==0){alert("Pehle Bill Hisab Karo");return}
+  let card = document.getElementById('billCard');
+  let canvas = document.createElement('canvas');
+  let ctx = canvas.getContext('2d');
+  
+  canvas.width = 400;
+  canvas.height = 200;
+  
+  ctx.fillStyle = '#e8f5e9';
+  ctx.fillRect(0, 0, 400, 200);
+  
+  ctx.strokeStyle = '#006400';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(5, 5, 390, 190);
+  
+  ctx.fillStyle = '#006400';
+  ctx.font = 'bold 18px Arial';
+  ctx.fillText('⚡ Bijli Hisab Pro', 120, 30);
+  
+  ctx.fillStyle = '#333';
+  ctx.font = '16px Arial';
+  if(lastName) ctx.fillText('🏷️ ' + lastName, 20, 60);
+  ctx.fillText('Unit Use: ' + lastUnit, 20, 90);
+  ctx.fillText('Total Bill: Rs ' + lastBill.toFixed(0), 20, 120);
+  ctx.fillText('Date: ' + new Date().toLocaleDateString('ur-PK'), 20, 150);
+  ctx.font = '12px Arial';
+  ctx.fillText('GEPCO Ref: ' + lastRef, 20, 175);
+  
+  let link = document.createElement('a');
+  link.download = 'Bill_' + lastName + '_' + Date.now() + '.png';
+  link.href = canvas.toDataURL();
+  link.click();
+  
+  alert('✅ Bill ki photo Gallery me save ho gayi!');
+}
+
+function drawGraph(){
+let data = JSON.parse(localStorage.getItem('bills') || '[]');
+let canvas = document.getElementById('graph');
+let ctx = canvas.getContext('2d');
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+if(data.length==0) return;
+
+let max = Math.max(...data.map(d=>parseInt(d.bill)));
+let w = canvas.width / data.length;
+
+ctx.fillStyle = '#006400';
+data.forEach((d,i)=>{
+  let h = (d.bill/max)*150;
+  ctx.fillRect(i*w+10, 160-h, w-20, h);
+  ctx.fillStyle = '#333';
+  ctx.font = '10px sans-serif';
+  ctx.fillText(d.name, i*w+5, 10);
+  ctx.fillText(d.month, i*w+15, 175);
+  ctx.fillText('Rs'+d.bill, i*w+10, 150-h);
+  ctx.fillStyle = '#006400';
+});
+}
+
+function showHistory(){
+let data = JSON.parse(localStorage.getItem('bills') || '[]');
+let html = '<b>6 Mahine ka Hisab:</b>';
+data.reverse().forEach(d=>{
+  html += `<div class="history-item"><span>${d.name} - ${d.month} - ${d.unit} Unit</span><span>Rs ${d.bill}</span></div>`;
+});
+document.getElementById('history').innerHTML = html;
+}
+
+function pay(app){
+if(lastBill==0){alert("Pehle Bill Hisab Karo");return}
+let amount = lastBill.toFixed(0);
+let ref = lastRef || "BillRef";
+
+if(app=='jazzcash'){
+  window.open(`jazzcash://pay?amount=${amount}&note=${ref}`, '_blank');
+  setTimeout(()=>{alert("JazzCash na khule to Play Store se install kar lo")},2000)
+} else {
+  window.open(`easypaisa://send?amount=${amount}&description=${ref}`, '_blank');
+  setTimeout(()=>{alert("Easypaisa na khule to Play Store se install kar lo")},2000)
+}
+}
+
+window.onload = function(){
+  drawGraph();
+  showHistory();
+}
+</script>
+</body>
+</html>
